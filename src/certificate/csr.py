@@ -3,6 +3,7 @@ import ipaddress
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.x509.oid import NameOID
 
 
@@ -58,6 +59,54 @@ def build_csr(
         encryption_algorithm=serialization.NoEncryption(),
     )
     return csr_pem, key_pem
+
+
+def decode_csr(pem_data: bytes) -> dict:
+    """Decode a PEM-encoded CSR and return structured info."""
+    try:
+        csr = x509.load_pem_x509_csr(pem_data)
+    except Exception as e:
+        raise ValueError(f"Invalid CSR: {e}") from e
+
+    oid_map = [
+        (NameOID.COMMON_NAME, "CN"),
+        (NameOID.ORGANIZATION_NAME, "O"),
+        (NameOID.ORGANIZATIONAL_UNIT_NAME, "OU"),
+        (NameOID.COUNTRY_NAME, "C"),
+        (NameOID.STATE_OR_PROVINCE_NAME, "ST"),
+        (NameOID.LOCALITY_NAME, "L"),
+        (NameOID.EMAIL_ADDRESS, "Email"),
+    ]
+    subject = {}
+    for oid, label in oid_map:
+        attrs = csr.subject.get_attributes_for_oid(oid)
+        subject[label] = attrs[0].value if attrs else ""
+
+    san = []
+    try:
+        san_ext = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        for name in san_ext.value:
+            if isinstance(name, x509.DNSName):
+                san.append(f"DNS:{name.value}")
+            elif isinstance(name, x509.IPAddress):
+                san.append(f"IP:{name.value}")
+    except x509.ExtensionNotFound:
+        pass
+
+    pub_key = csr.public_key()
+    public_key_info = {
+        "algorithm": "RSA" if isinstance(pub_key, RSAPublicKey) else type(pub_key).__name__,
+        "key_size": pub_key.key_size,
+    }
+
+    sig_algo = csr.signature_algorithm_oid._name
+
+    return {
+        "subject": subject,
+        "san": san,
+        "public_key": public_key_info,
+        "signature_algorithm": sig_algo,
+    }
 
 
 def validate_san_entries(entries: list[str]) -> list[str]:

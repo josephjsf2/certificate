@@ -4,7 +4,9 @@ from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
-from certificate.csr import generate_private_key, build_csr, validate_san_entries
+import pytest
+
+from certificate.csr import generate_private_key, build_csr, validate_san_entries, decode_csr
 
 
 class TestGeneratePrivateKey:
@@ -133,3 +135,61 @@ class TestValidateSanEntries:
     def test_skips_blank_lines(self):
         errors = validate_san_entries(["", "  ", "DNS:example.com"])
         assert errors == []
+
+
+class TestDecodeCSR:
+    def _make_csr(self, **kwargs):
+        """Helper: generate a CSR and return its PEM bytes."""
+        key = generate_private_key(2048)
+        csr_pem, _ = build_csr(private_key=key, common_name="example.com", **kwargs)
+        return csr_pem
+
+    def test_decode_subject_cn_only(self):
+        csr_pem = self._make_csr()
+        info = decode_csr(csr_pem)
+        assert info["subject"]["CN"] == "example.com"
+        assert info["subject"]["O"] == ""
+
+    def test_decode_all_subject_fields(self):
+        csr_pem = self._make_csr(
+            organization="My Org",
+            organizational_unit="IT",
+            country="TW",
+            state="Taiwan",
+            locality="Taipei",
+            email="admin@example.com",
+        )
+        info = decode_csr(csr_pem)
+        assert info["subject"]["CN"] == "example.com"
+        assert info["subject"]["O"] == "My Org"
+        assert info["subject"]["OU"] == "IT"
+        assert info["subject"]["C"] == "TW"
+        assert info["subject"]["ST"] == "Taiwan"
+        assert info["subject"]["L"] == "Taipei"
+        assert info["subject"]["Email"] == "admin@example.com"
+
+    def test_decode_san_entries(self):
+        csr_pem = self._make_csr(san_entries=["DNS:example.com", "IP:192.168.1.1"])
+        info = decode_csr(csr_pem)
+        assert "DNS:example.com" in info["san"]
+        assert "IP:192.168.1.1" in info["san"]
+
+    def test_decode_no_san(self):
+        csr_pem = self._make_csr(san_entries=[])
+        info = decode_csr(csr_pem)
+        assert info["san"] == []
+
+    def test_decode_public_key_info(self):
+        csr_pem = self._make_csr()
+        info = decode_csr(csr_pem)
+        assert info["public_key"]["algorithm"] == "RSA"
+        assert info["public_key"]["key_size"] == 2048
+
+    def test_decode_signature_algorithm(self):
+        csr_pem = self._make_csr()
+        info = decode_csr(csr_pem)
+        assert "sha256" in info["signature_algorithm"].lower()
+
+    def test_decode_invalid_pem(self):
+        with pytest.raises(ValueError):
+            decode_csr(b"not a valid CSR")
