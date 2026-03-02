@@ -1,0 +1,15 @@
+[project]
+name = "certificate"
+version = "0.1.0"
+description = "Cross-platform CSR generator with GUI"
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography",
+]
+
+[project.scripts]
+certificate = "certificate.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
