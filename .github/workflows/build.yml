@@ -1,0 +1,83 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
+
+      - name: Build .app with PyInstaller
+        run: |
+          uv pip install pyinstaller
+          uv run pyinstaller --onefile --windowed --name "CSR工具" src/certificate/main.py
+
+      - name: Zip .app bundle
+        run: |
+          cd dist
+          zip -r "CSR工具-macos.zip" "CSR工具.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: dist/CSR工具-macos.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
+
+      - name: Build .exe with PyInstaller
+        run: |
+          uv pip install pyinstaller
+          uv run pyinstaller --onefile --windowed --name "CSR工具" src/certificate/main.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/CSR工具.exe
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/macos-app/CSR工具-macos.zip
+            artifacts/windows-exe/CSR工具.exe
