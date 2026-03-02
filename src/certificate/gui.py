@@ -1,21 +1,37 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from certificate.csr import generate_private_key, build_csr, validate_san_entries
+from certificate.csr import (
+    generate_private_key,
+    build_csr,
+    validate_san_entries,
+    decode_csr,
+)
 
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CSR 產生器")
+        self.title("CSR 工具")
         self.resizable(False, False)
         self._build_ui()
 
     def _build_ui(self):
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True, padx=8, pady=8)
+
+        self._build_generate_tab(notebook)
+        self._build_decode_tab(notebook)
+
+    # ── Generate CSR tab ─────────────────────────────────────────
+
+    def _build_generate_tab(self, notebook: ttk.Notebook):
+        tab = ttk.Frame(notebook)
+        notebook.add(tab, text="產生 CSR")
         pad = {"padx": 8, "pady": 4}
 
         # --- Subject Fields ---
-        subject_frame = ttk.LabelFrame(self, text="Subject 欄位")
+        subject_frame = ttk.LabelFrame(tab, text="Subject 欄位")
         subject_frame.pack(fill="x", **pad)
 
         fields = [
@@ -36,11 +52,10 @@ class App(tk.Tk):
             entry.grid(row=row, column=1, padx=4, pady=2)
             self._entries[key] = entry
 
-        # Default country to TW
         self._entries["country"].insert(0, "TW")
 
         # --- RSA Key Settings ---
-        key_frame = ttk.LabelFrame(self, text="RSA 金鑰設定")
+        key_frame = ttk.LabelFrame(tab, text="RSA 金鑰設定")
         key_frame.pack(fill="x", **pad)
 
         ttk.Label(key_frame, text="金鑰長度").grid(
@@ -53,7 +68,7 @@ class App(tk.Tk):
         self._key_size.grid(row=0, column=1, sticky="w", padx=4, pady=2)
 
         # --- SAN ---
-        san_frame = ttk.LabelFrame(self, text="Subject Alternative Names (SAN)")
+        san_frame = ttk.LabelFrame(tab, text="Subject Alternative Names (SAN)")
         san_frame.pack(fill="x", **pad)
 
         ttk.Label(
@@ -65,7 +80,7 @@ class App(tk.Tk):
         self._san_text.pack(fill="x", padx=4, pady=4)
 
         # --- Generate Button ---
-        ttk.Button(self, text="產生 CSR", command=self._on_generate).pack(pady=12)
+        ttk.Button(tab, text="產生 CSR", command=self._on_generate).pack(pady=12)
 
     def _on_generate(self):
         cn = self._entries["cn"].get().strip()
@@ -73,17 +88,14 @@ class App(tk.Tk):
             messagebox.showerror("錯誤", "通用名稱 (CN) 為必填欄位")
             return
 
-        # Parse SAN
         san_raw = self._san_text.get("1.0", tk.END).strip()
         san_entries = [line for line in san_raw.splitlines() if line.strip()] if san_raw else []
 
-        # Validate SAN
         san_errors = validate_san_entries(san_entries)
         if san_errors:
             messagebox.showerror("SAN 格式錯誤", "\n".join(san_errors))
             return
 
-        # Ask save path
         file_path = filedialog.asksaveasfilename(
             title="儲存 CSR 檔案",
             defaultextension=".csr",
@@ -93,7 +105,6 @@ class App(tk.Tk):
         if not file_path:
             return
 
-        # Derive key path
         if file_path.endswith(".csr"):
             key_path = file_path[:-4] + ".key"
         else:
@@ -125,3 +136,79 @@ class App(tk.Tk):
             )
         except Exception as e:
             messagebox.showerror("產生失敗", str(e))
+
+    # ── Decode CSR tab ───────────────────────────────────────────
+
+    def _build_decode_tab(self, notebook: ttk.Notebook):
+        tab = ttk.Frame(notebook)
+        notebook.add(tab, text="檢視 CSR")
+        pad = {"padx": 8, "pady": 4}
+
+        # --- Buttons ---
+        btn_frame = ttk.Frame(tab)
+        btn_frame.pack(fill="x", **pad)
+        ttk.Button(btn_frame, text="載入 CSR 檔案", command=self._on_load_csr).pack(
+            side="left", padx=(0, 4)
+        )
+        ttk.Button(btn_frame, text="解碼", command=self._on_decode).pack(side="left")
+
+        # --- PEM Input ---
+        pem_frame = ttk.LabelFrame(tab, text="PEM 內容（可貼上文字）")
+        pem_frame.pack(fill="x", **pad)
+        self._pem_input = tk.Text(pem_frame, height=8, width=60)
+        self._pem_input.pack(fill="x", padx=4, pady=4)
+
+        # --- Decode Result ---
+        result_frame = ttk.LabelFrame(tab, text="解碼結果")
+        result_frame.pack(fill="both", expand=True, **pad)
+        self._decode_result = tk.Text(result_frame, height=14, width=60, state="disabled")
+        self._decode_result.pack(fill="both", expand=True, padx=4, pady=4)
+
+    def _on_load_csr(self):
+        file_path = filedialog.askopenfilename(
+            title="選擇 CSR 檔案",
+            filetypes=[("CSR files", "*.csr *.pem"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+        with open(file_path, "rb") as f:
+            pem_data = f.read()
+        self._pem_input.delete("1.0", tk.END)
+        self._pem_input.insert("1.0", pem_data.decode("utf-8", errors="replace"))
+        self._on_decode()
+
+    def _on_decode(self):
+        pem_text = self._pem_input.get("1.0", tk.END).strip()
+        if not pem_text:
+            messagebox.showerror("錯誤", "請先載入或貼上 CSR 的 PEM 內容")
+            return
+
+        try:
+            info = decode_csr(pem_text.encode("utf-8"))
+        except ValueError as e:
+            messagebox.showerror("解碼失敗", str(e))
+            return
+
+        lines = []
+        lines.append("Subject:")
+        for label, value in info["subject"].items():
+            if value:
+                lines.append(f"  {label}: {value}")
+
+        lines.append("")
+        if info["san"]:
+            lines.append("SAN:")
+            for entry in info["san"]:
+                lines.append(f"  {entry}")
+        else:
+            lines.append("SAN: (無)")
+
+        lines.append("")
+        pk = info["public_key"]
+        lines.append(f"公鑰: {pk['algorithm']} {pk['key_size']} bits")
+        lines.append(f"簽名演算法: {info['signature_algorithm']}")
+
+        self._decode_result.configure(state="normal")
+        self._decode_result.delete("1.0", tk.END)
+        self._decode_result.insert("1.0", "\n".join(lines))
+        self._decode_result.configure(state="disabled")
