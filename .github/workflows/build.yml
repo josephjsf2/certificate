@@ -63,11 +63,9 @@ jobs:
         run: uv run pytest tests/ -v
 
       - name: Build with Nuitka
-        env:
-          NUITKA_ASSUME_YES_FOR_DOWNLOADS: "1"
         run: |
           uv pip install nuitka ordered-set
-          uv run python -m nuitka --standalone --output-dir=dist --enable-plugin=tk-inter --windows-console-mode=disable src/certificate/main.py
+          uv run python -m nuitka --standalone --assume-yes-for-downloads --output-dir=dist --enable-plugin=tk-inter --windows-console-mode=disable src/certificate/main.py
 
       - name: Package distribution
         shell: pwsh
