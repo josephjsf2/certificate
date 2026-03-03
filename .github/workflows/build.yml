@@ -33,17 +33,12 @@ jobs:
             --enable-plugin=tk-inter \
             src/certificate/main.py
 
-      - name: Debug Nuitka output
-        run: |
-          ls -la dist/
-          find dist/ -maxdepth 2 -type f -name "main*" || true
-
       - name: Create .app bundle
         run: |
           mkdir -p "dist/CSR工具.app/Contents"
           mv dist/main.dist "dist/CSR工具.app/Contents/MacOS"
-          chmod +x "dist/CSR工具.app/Contents/MacOS/main"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string main" "dist/CSR工具.app/Contents/Info.plist"
+          chmod +x "dist/CSR工具.app/Contents/MacOS/main.bin"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string main.bin" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.certificate.tool" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleName string CSR工具" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.3.0" "dist/CSR工具.app/Contents/Info.plist"
