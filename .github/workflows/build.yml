@@ -23,10 +23,17 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
-      - name: Build .app with PyInstaller
+      - name: Build with Nuitka
         run: |
-          uv pip install pyinstaller
-          uv run pyinstaller --onefile --windowed --name "CSR工具" src/certificate/main.py
+          uv pip install nuitka ordered-set
+          uv run python -m nuitka \
+            --standalone \
+            --output-dir=dist \
+            --enable-plugin=tk-inter \
+            --macos-create-app-bundle \
+            --macos-app-name="CSR工具" \
+            src/certificate/main.py
+          mv dist/main.app "dist/CSR工具.app"
 
       - name: Zip .app bundle
         run: |
@@ -55,15 +62,22 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
-      - name: Build .exe with PyInstaller
+      - name: Build with Nuitka
         run: |
-          uv pip install pyinstaller
-          uv run pyinstaller --onefile --windowed --name "CSR工具" src/certificate/main.py
+          uv pip install nuitka ordered-set
+          uv run python -m nuitka --standalone --output-dir=dist --enable-plugin=tk-inter --windows-console-mode=disable src/certificate/main.py
+
+      - name: Package distribution
+        shell: pwsh
+        run: |
+          Rename-Item -Path "dist\main.dist\main.exe" -NewName "CSR工具.exe"
+          Rename-Item -Path "dist\main.dist" -NewName "CSR工具"
+          Compress-Archive -Path "dist\CSR工具" -DestinationPath "dist\CSR工具-windows.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
-          path: dist/CSR工具.exe
+          name: windows-zip
+          path: dist/CSR工具-windows.zip
 
   release:
     needs: [build-macos, build-windows]
@@ -80,4 +94,4 @@ jobs:
         with:
           files: |
             artifacts/macos-app/CSR工具-macos.zip
-            artifacts/windows-exe/CSR工具.exe
+            artifacts/windows-zip/CSR工具-windows.zip

@@ -18,3 +18,7 @@ build-backend = "hatchling.build"
 dev = [
     "pytest>=9.0.2",
 ]
+build = [
+    "nuitka",
+    "ordered-set",
+]
