@@ -33,6 +33,11 @@ jobs:
             --enable-plugin=tk-inter \
             src/certificate/main.py
 
+      - name: Debug Nuitka output
+        run: |
+          ls -la dist/
+          find dist/ -maxdepth 2 -type f -name "main*" || true
+
       - name: Create .app bundle
         run: |
           mkdir -p "dist/CSR工具.app/Contents"
