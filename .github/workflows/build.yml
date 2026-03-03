@@ -28,21 +28,20 @@ jobs:
           uv pip install nuitka ordered-set
           uv run python -m nuitka \
             --standalone \
+            --assume-yes-for-downloads \
             --output-dir=dist \
             --enable-plugin=tk-inter \
-            --macos-create-app-bundle \
-            --macos-app-name="CSR工具" \
             src/certificate/main.py
-          mv dist/main.app "dist/CSR工具.app"
+          mv dist/main.dist "dist/CSR工具"
 
-      - name: Zip .app bundle
+      - name: Zip distribution
         run: |
           cd dist
-          zip -r "CSR工具-macos.zip" "CSR工具.app"
+          zip -r "CSR工具-macos.zip" "CSR工具"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-app
+          name: macos-zip
           path: dist/CSR工具-macos.zip
 
   build-windows:
@@ -93,5 +92,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/macos-app/CSR工具-macos.zip
+            artifacts/macos-zip/CSR工具-macos.zip
             artifacts/windows-zip/CSR工具-windows.zip
