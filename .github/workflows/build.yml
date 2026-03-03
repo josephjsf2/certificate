@@ -37,28 +37,14 @@ jobs:
         run: |
           mkdir -p "dist/CSR工具.app/Contents/MacOS"
           mv dist/main.dist/* "dist/CSR工具.app/Contents/MacOS/"
-          cat > "dist/CSR工具.app/Contents/Info.plist" << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key>
-            <string>main</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.certificate.tool</string>
-            <key>CFBundleName</key>
-            <string>CSR工具</string>
-            <key>CFBundleVersion</key>
-            <string>0.3.0</string>
-            <key>CFBundleShortVersionString</key>
-            <string>0.3.0</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-          </dict>
-          </plist>
-          PLIST
+          chmod +x "dist/CSR工具.app/Contents/MacOS/main"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string main" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.certificate.tool" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleName string CSR工具" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.3.0" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.3.0" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "dist/CSR工具.app/Contents/Info.plist"
           cd dist && zip -r "CSR工具-macos.zip" "CSR工具.app"
 
       - uses: actions/upload-artifact@v4
