@@ -1,6 +1,6 @@
 [project]
 name = "certificate"
-version = "0.3.0"
+version = "0.3.1"
 description = "Cross-platform CSR generator with GUI"
 requires-python = ">=3.10"
 dependencies = [
