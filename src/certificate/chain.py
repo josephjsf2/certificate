@@ -190,14 +190,16 @@ def export_chain_pem(certs: list[x509.Certificate]) -> bytes:
 
 
 def _is_self_signed(cert: x509.Certificate) -> bool:
-    """判斷憑證是否為 self-signed"""
+    """判斷憑證是否為 self-signed（issuer == subject 即視為 self-signed）"""
     if cert.issuer != cert.subject:
         return False
     try:
         cert.verify_directly_issued_by(cert)
-        return True
     except Exception:
-        return False
+        # issuer == subject 但簽章驗證失敗（如 SHA-1 等舊演算法），
+        # 仍視為 self-signed
+        pass
+    return True
 
 
 def _format_dn(name: x509.Name) -> str:
