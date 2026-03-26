@@ -35,22 +35,23 @@ jobs:
 
       - name: Create .app bundle
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p "dist/CSR工具.app/Contents"
           mv dist/main.dist "dist/CSR工具.app/Contents/MacOS"
           chmod +x "dist/CSR工具.app/Contents/MacOS/main.bin"
           /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string main.bin" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.certificate.tool" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleName string CSR工具" "dist/CSR工具.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.3.0" "dist/CSR工具.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.3.0" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "dist/CSR工具.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "dist/CSR工具.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "dist/CSR工具.app/Contents/Info.plist"
-          cd dist && zip -r "CSR工具-macos.zip" "CSR工具.app"
+          cd dist && zip -r "certificate-macos.zip" "CSR工具.app"
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-zip
-          path: dist/CSR工具-macos.zip
+          path: dist/certificate-macos.zip
 
   build-windows:
     runs-on: windows-latest
@@ -79,12 +80,12 @@ jobs:
         run: |
           Rename-Item -Path "dist\main.dist\main.exe" -NewName "CSR工具.exe"
           Rename-Item -Path "dist\main.dist" -NewName "CSR工具"
-          Compress-Archive -Path "dist\CSR工具" -DestinationPath "dist\CSR工具-windows.zip"
+          Compress-Archive -Path "dist\CSR工具" -DestinationPath "dist\certificate-windows.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-zip
-          path: dist/CSR工具-windows.zip
+          path: dist/certificate-windows.zip
 
   release:
     needs: [build-macos, build-windows]
@@ -100,5 +101,44 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/macos-zip/CSR工具-macos.zip
-            artifacts/windows-zip/CSR工具-windows.zip
+            artifacts/macos-zip/certificate-macos.zip
+            artifacts/windows-zip/certificate-windows.zip
+
+  update-tap:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS zip from release
+        run: |
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "certificate-macos.zip" \
+            --dir .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          SHA=$(sha256sum certificate-macos.zip | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew tap
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
+
+          gh repo clone josephjsf2/homebrew-tap /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Casks/certificate.rb
+          sed -i "s/sha256 .*/sha256 \"$SHA\"/" Casks/certificate.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/certificate.rb
+          git commit -m "chore: bump certificate to $VERSION"
+          git push
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}

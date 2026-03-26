@@ -32,10 +32,14 @@ uv run certificate
 
 ### 下載預建版本
 
-至 [Releases](https://github.com/josephjsf2/certificate/releases) 頁面下載對應平台的執行檔：
+**macOS** — 透過 [Homebrew](https://brew.sh/) 安裝：
 
-- **macOS**: `CSR工具-macos.zip`（解壓後執行 .app）
-- **Windows**: `CSR工具.exe`（直接執行）
+```bash
+brew tap josephjsf2/tap
+brew install --cask josephjsf2/tap/certificate
+```
+
+**Windows** — 至 [Releases](https://github.com/josephjsf2/certificate/releases) 頁面下載 `certificate-windows.zip`，解壓後執行 `CSR工具.exe`。
 
 ## 使用說明
 
