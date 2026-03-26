@@ -7,6 +7,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import AuthorityInformationAccessOID
 
+from certificate.chain import _is_self_signed
+
 
 @dataclass(frozen=True)
 class AiaResult:
@@ -59,9 +61,6 @@ def _download_cert(url: str, timeout: int = 10) -> x509.Certificate | None:
         return x509.load_pem_x509_certificate(data)
     except Exception:
         return None
-
-
-from certificate.chain import _is_self_signed
 
 
 def _cert_fingerprint(cert: x509.Certificate) -> bytes:
@@ -130,6 +129,7 @@ def fetch_intermediate_chain(
 
         current = fetched
     else:
+        # Loop exhausted max_depth without break — chain may be incomplete
         if not _is_self_signed(current):
             errors.append("已達最大深度限制，憑證鏈可能不完整")
 

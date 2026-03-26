@@ -271,6 +271,7 @@ class TestFetchIntermediateChain:
 
         assert len(result.certificates) == 0
         assert any("最大深度" in e for e in result.errors)
+        assert result.root_found is False
 
     def test_no_aia_extension(self):
         """Cert without AIA should return empty result with error."""
