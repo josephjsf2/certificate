@@ -97,3 +97,70 @@ class TestGetAiaCaIssuerUrls:
         cert, _ = _build_cert_with_aia("leaf.example.com", aia_urls=None)
         urls = get_aia_ca_issuer_urls(cert)
         assert urls == []
+
+
+# ── TestDownloadCert ──────────────────────────────────────────
+
+
+from unittest.mock import patch, MagicMock
+from urllib.error import URLError
+
+from cryptography.hazmat.primitives.serialization import Encoding
+
+from certificate.aia import _download_cert
+
+
+class TestDownloadCert:
+    def test_download_der_format(self):
+        """DER-encoded certificate should be parsed correctly."""
+        cert, _ = _build_cert_with_aia("Intermediate CA", is_ca=True)
+        der_data = cert.public_bytes(Encoding.DER)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = der_data
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("certificate.aia.urlopen", return_value=mock_response):
+            result = _download_cert("http://ca.example.com/ca.der", timeout=10)
+
+        assert result is not None
+        assert result.subject == cert.subject
+
+    def test_download_pem_format(self):
+        """PEM-encoded certificate should be parsed correctly."""
+        cert, _ = _build_cert_with_aia("Intermediate CA", is_ca=True)
+        pem_data = cert.public_bytes(Encoding.PEM)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = pem_data
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("certificate.aia.urlopen", return_value=mock_response):
+            result = _download_cert("http://ca.example.com/ca.pem", timeout=10)
+
+        assert result is not None
+        assert result.subject == cert.subject
+
+    def test_download_invalid_data_returns_none(self):
+        """Invalid certificate data should return None."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"not a certificate"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("certificate.aia.urlopen", return_value=mock_response):
+            result = _download_cert("http://ca.example.com/bad.der", timeout=10)
+
+        assert result is None
+
+    def test_download_url_error_returns_none(self):
+        """Network errors should return None."""
+        with patch(
+            "certificate.aia.urlopen",
+            side_effect=URLError("connection refused"),
+        ):
+            result = _download_cert("http://unreachable.example.com/ca.der", timeout=10)
+
+        assert result is None
