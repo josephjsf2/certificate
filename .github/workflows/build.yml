@@ -131,6 +131,7 @@ jobs:
 
           gh repo clone josephjsf2/homebrew-tap /tmp/homebrew-tap
           cd /tmp/homebrew-tap
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/josephjsf2/homebrew-tap.git"
 
           sed -i "s/version \".*\"/version \"$VERSION\"/" Casks/certificate.rb
           sed -i "s/sha256 .*/sha256 \"$SHA\"/" Casks/certificate.rb
