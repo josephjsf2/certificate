@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from cryptography import x509
+from cryptography.hazmat.primitives.serialization import Encoding
 
 from certificate.csr import (
     generate_private_key,
@@ -14,8 +15,9 @@ from certificate.chain import (
     validate_chain,
     build_chain,
     export_chain_pem,
+    _is_self_signed,
 )
-from certificate.pfx import load_pfx
+from certificate.pfx import load_pfx, format_certificate_info
 from certificate.aia import fetch_intermediate_chain
 from certificate.selfsigned import build_self_signed_cert
 
@@ -557,64 +559,63 @@ class App(tk.Tk):
         if not self._pfx_result or not self._pfx_result.get("certificate_pem"):
             return
 
-        # Parse the leaf certificate
-        leaf_cert = x509.load_pem_x509_certificate(
-            self._pfx_result["certificate_pem"]
-        )
-
-        # Parse existing additional certs from PFX
-        existing: list[x509.Certificate] = []
-        for pem in self._pfx_result.get("additional_certs_pem", []):
-            existing.append(x509.load_pem_x509_certificate(pem))
-
-        # Determine start cert: if PFX has intermediates, start from the topmost
-        from certificate.chain import _is_self_signed
-
-        if existing:
-            sorted_chain = build_chain([leaf_cert] + existing)
-            start_cert = sorted_chain[-1] if sorted_chain else leaf_cert
-            if _is_self_signed(start_cert) and len(sorted_chain) > 1:
-                start_cert = sorted_chain[-2]
-        else:
-            start_cert = leaf_cert
-
-        aia_result = fetch_intermediate_chain(
-            start_cert, existing_certs=[leaf_cert] + existing
-        )
-
-        self._pfx_aia_certs = aia_result.certificates
-        self._pfx_aia_errors = aia_result.errors
-
-        # Update info display — append to existing content
-        from certificate.pfx import format_certificate_info
-
-        self._pfx_info.configure(state="normal")
-
-        lines = []
-        if aia_result.certificates:
-            lines.append("")
-            lines.append(
-                f"═══ AIA 補齊結果 ({len(aia_result.certificates)} 張) ═══"
+        try:
+            # Parse the leaf certificate
+            leaf_cert = x509.load_pem_x509_certificate(
+                self._pfx_result["certificate_pem"]
             )
-            for i, cert in enumerate(aia_result.certificates):
-                info = format_certificate_info(cert)
-                lines.append(f"[{i}] Subject: {info['subject']}")
-                lines.append(f"    Issuer:  {info['issuer']}")
+
+            # Parse existing additional certs from PFX
+            existing: list[x509.Certificate] = []
+            for pem in self._pfx_result.get("additional_certs_pem", []):
+                existing.append(x509.load_pem_x509_certificate(pem))
+
+            # Determine start cert: if PFX has intermediates, start from the topmost
+            if existing:
+                sorted_chain = build_chain([leaf_cert] + existing)
+                start_cert = sorted_chain[-1] if sorted_chain else leaf_cert
+                if _is_self_signed(start_cert) and len(sorted_chain) > 1:
+                    start_cert = sorted_chain[-2]
+            else:
+                start_cert = leaf_cert
+
+            aia_result = fetch_intermediate_chain(
+                start_cert, existing_certs=[leaf_cert] + existing
+            )
+
+            self._pfx_aia_certs = aia_result.certificates
+            self._pfx_aia_errors = aia_result.errors
+
+            # Update info display — append to existing content
+            self._pfx_info.configure(state="normal")
+
+            lines = []
+            if aia_result.certificates:
+                lines.append("")
                 lines.append(
-                    f"    有效期:  {info['not_before']} ~ {info['not_after']}"
+                    f"═══ AIA 補齊結果 ({len(aia_result.certificates)} 張) ═══"
                 )
+                for i, cert in enumerate(aia_result.certificates):
+                    info = format_certificate_info(cert)
+                    lines.append(f"[{i}] Subject: {info['subject']}")
+                    lines.append(f"    Issuer:  {info['issuer']}")
+                    lines.append(
+                        f"    有效期:  {info['not_before']} ~ {info['not_after']}"
+                    )
 
-        if aia_result.errors:
-            lines.append("")
-            for err in aia_result.errors:
-                lines.append(f"⚠ {err}")
+            if aia_result.errors:
+                lines.append("")
+                for err in aia_result.errors:
+                    lines.append(f"⚠ {err}")
 
-        if not aia_result.certificates and not aia_result.errors:
-            lines.append("")
-            lines.append("⚠ 無法透過 AIA 取得 intermediate 憑證")
+            if not aia_result.certificates and not aia_result.errors:
+                lines.append("")
+                lines.append("⚠ 無法透過 AIA 取得 intermediate 憑證")
 
-        self._pfx_info.insert(tk.END, "\n".join(lines))
-        self._pfx_info.configure(state="disabled")
+            self._pfx_info.insert(tk.END, "\n".join(lines))
+            self._pfx_info.configure(state="disabled")
+        except Exception as e:
+            messagebox.showerror("補齊失敗", str(e))
 
     def _on_save_pfx(self):
         result = self._pfx_result
@@ -634,52 +635,53 @@ class App(tk.Tk):
         chain_path = base + "_chain.crt"
         fullchain_path = base + "_fullchain.crt"
 
-        saved = []
+        try:
+            saved = []
 
-        # Main certificate
-        if result["certificate_pem"]:
-            with open(file_path, "wb") as f:
-                f.write(result["certificate_pem"])
-            saved.append(f"憑證: {file_path}")
+            # Main certificate
+            if result["certificate_pem"]:
+                with open(file_path, "wb") as f:
+                    f.write(result["certificate_pem"])
+                saved.append(f"憑證: {file_path}")
 
-        # Private key
-        if result["private_key_pem"]:
-            with open(key_path, "wb") as f:
-                f.write(result["private_key_pem"])
-            saved.append(f"私鑰: {key_path}")
+            # Private key
+            if result["private_key_pem"]:
+                with open(key_path, "wb") as f:
+                    f.write(result["private_key_pem"])
+                saved.append(f"私鑰: {key_path}")
 
-        # Chain file: PFX additional certs + AIA-fetched certs
-        from cryptography.hazmat.primitives.serialization import Encoding
-        from certificate.chain import _is_self_signed
-
-        all_chain_pem: list[bytes] = list(result.get("additional_certs_pem", []))
-        for cert in self._pfx_aia_certs:
-            all_chain_pem.append(cert.public_bytes(Encoding.PEM))
-
-        if all_chain_pem:
-            with open(chain_path, "wb") as f:
-                for pem in all_chain_pem:
-                    f.write(pem)
-            saved.append(f"憑證鏈: {chain_path}")
-
-        # Fullchain: leaf + PFX intermediates + AIA intermediates (optional root)
-        if self._pfx_aia_certs and result["certificate_pem"]:
-            fullchain_parts: list[bytes] = [result["certificate_pem"]]
-
-            # Add PFX additional certs (in original order)
-            for pem in result.get("additional_certs_pem", []):
-                fullchain_parts.append(pem)
-
-            # Add AIA-fetched certs (filter root based on checkbox)
+            # Chain file: PFX additional certs + AIA-fetched certs
+            all_chain_pem: list[bytes] = list(result.get("additional_certs_pem", []))
             for cert in self._pfx_aia_certs:
-                if _is_self_signed(cert) and not self._pfx_include_root.get():
-                    continue
-                fullchain_parts.append(cert.public_bytes(Encoding.PEM))
+                all_chain_pem.append(cert.public_bytes(Encoding.PEM))
 
-            with open(fullchain_path, "wb") as f:
-                for part in fullchain_parts:
-                    f.write(part)
-            saved.append(f"完整鏈: {fullchain_path}")
+            if all_chain_pem:
+                with open(chain_path, "wb") as f:
+                    for pem in all_chain_pem:
+                        f.write(pem)
+                saved.append(f"憑證鏈: {chain_path}")
+
+            # Fullchain: leaf + PFX intermediates + AIA intermediates (optional root)
+            if self._pfx_aia_certs and result["certificate_pem"]:
+                fullchain_parts: list[bytes] = [result["certificate_pem"]]
+
+                # Add PFX additional certs (in original order)
+                for pem in result.get("additional_certs_pem", []):
+                    fullchain_parts.append(pem)
+
+                # Add AIA-fetched certs (filter root based on checkbox)
+                for cert in self._pfx_aia_certs:
+                    if _is_self_signed(cert) and not self._pfx_include_root.get():
+                        continue
+                    fullchain_parts.append(cert.public_bytes(Encoding.PEM))
+
+                with open(fullchain_path, "wb") as f:
+                    for part in fullchain_parts:
+                        f.write(part)
+                saved.append(f"完整鏈: {fullchain_path}")
+        except OSError as e:
+            messagebox.showerror("儲存失敗", str(e))
+            return
 
         messagebox.showinfo("成功", "已儲存:\n" + "\n".join(saved))
 
