@@ -164,3 +164,134 @@ class TestDownloadCert:
             result = _download_cert("http://unreachable.example.com/ca.der", timeout=10)
 
         assert result is None
+
+
+from certificate.aia import fetch_intermediate_chain, AiaResult
+
+
+def _make_chain_with_aia() -> (
+    tuple[x509.Certificate, x509.Certificate, x509.Certificate, rsa.RSAPrivateKey]
+):
+    """Build a 3-level chain: leaf → intermediate → root, each with AIA pointing up."""
+    root_cert, root_key = _build_cert_with_aia("Root CA", is_ca=True)
+
+    inter_cert, inter_key = _build_cert_with_aia(
+        "Intermediate CA",
+        aia_urls=["http://ca.example.com/root.der"],
+        issuer_cn="Root CA",
+        issuer_key=root_key,
+        is_ca=True,
+    )
+
+    leaf_cert, _ = _build_cert_with_aia(
+        "leaf.example.com",
+        aia_urls=["http://ca.example.com/intermediate.der"],
+        issuer_cn="Intermediate CA",
+        issuer_key=inter_key,
+    )
+
+    return leaf_cert, inter_cert, root_cert, root_key
+
+
+class TestFetchIntermediateChain:
+    def test_single_level_fetch(self):
+        """Fetch one intermediate from leaf's AIA."""
+        leaf_cert, inter_cert, root_cert, _ = _make_chain_with_aia()
+        inter_der = inter_cert.public_bytes(Encoding.DER)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = inter_der
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("certificate.aia.urlopen", return_value=mock_response):
+            result = fetch_intermediate_chain(leaf_cert, max_depth=1)
+
+        assert len(result.certificates) == 1
+        assert result.certificates[0].subject == inter_cert.subject
+
+    def test_recursive_multi_level_fetch(self):
+        """Recursively fetch intermediate → root."""
+        leaf_cert, inter_cert, root_cert, _ = _make_chain_with_aia()
+        inter_der = inter_cert.public_bytes(Encoding.DER)
+        root_der = root_cert.public_bytes(Encoding.DER)
+
+        call_count = 0
+
+        def mock_urlopen(req, timeout=None):
+            nonlocal call_count
+            mock_resp = MagicMock()
+            mock_resp.__enter__ = lambda s: s
+            mock_resp.__exit__ = MagicMock(return_value=False)
+
+            if call_count == 0:
+                mock_resp.read.return_value = inter_der
+            else:
+                mock_resp.read.return_value = root_der
+            call_count += 1
+            return mock_resp
+
+        with patch("certificate.aia.urlopen", side_effect=mock_urlopen):
+            result = fetch_intermediate_chain(leaf_cert)
+
+        assert len(result.certificates) == 2
+        assert result.certificates[0].subject == inter_cert.subject
+        assert result.certificates[1].subject == root_cert.subject
+        assert result.root_found is True
+
+    def test_dedup_with_existing_certs(self):
+        """Certificates already in existing_certs should not appear in result."""
+        leaf_cert, inter_cert, root_cert, _ = _make_chain_with_aia()
+        inter_der = inter_cert.public_bytes(Encoding.DER)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = inter_der
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("certificate.aia.urlopen", return_value=mock_response):
+            result = fetch_intermediate_chain(
+                leaf_cert, existing_certs=[inter_cert]
+            )
+
+        assert len(result.certificates) == 0
+
+    def test_max_depth_limit(self):
+        """Should stop at max_depth even if more AIA URLs exist."""
+        leaf_cert, inter_cert, _, _ = _make_chain_with_aia()
+        inter_der = inter_cert.public_bytes(Encoding.DER)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = inter_der
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("certificate.aia.urlopen", return_value=mock_response):
+            result = fetch_intermediate_chain(leaf_cert, max_depth=0)
+
+        assert len(result.certificates) == 0
+        assert any("最大深度" in e for e in result.errors)
+
+    def test_no_aia_extension(self):
+        """Cert without AIA should return empty result with error."""
+        cert, _ = _build_cert_with_aia("no-aia.example.com", aia_urls=None)
+
+        result = fetch_intermediate_chain(cert)
+
+        assert len(result.certificates) == 0
+        assert any("AIA" in e for e in result.errors)
+        assert result.root_found is False
+
+    def test_partial_failure_continues(self):
+        """If first URL fails but cert has AIA, record error and return partial."""
+        leaf_cert, inter_cert, root_cert, _ = _make_chain_with_aia()
+
+        with patch(
+            "certificate.aia.urlopen",
+            side_effect=URLError("connection refused"),
+        ):
+            result = fetch_intermediate_chain(leaf_cert)
+
+        assert len(result.certificates) == 0
+        assert len(result.errors) > 0
+        assert result.root_found is False
